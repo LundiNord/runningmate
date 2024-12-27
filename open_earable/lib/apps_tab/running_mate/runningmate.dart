@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:open_earable/apps_tab/running_mate/gpsposition.dart';
 import 'package:open_earable/apps_tab/running_mate/settings.dart';
+import 'package:open_earable/apps_tab/running_mate/stat_viewer.dart';
 import 'package:open_earable/ble/ble_controller.dart';
 import 'package:open_earable/shared/earable_not_connected_warning.dart';
 import 'dart:async';
@@ -8,6 +9,7 @@ import 'package:open_earable_flutter/open_earable_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
+import 'dart:async';
 
 ///
 class RunningMate extends StatefulWidget {
@@ -20,14 +22,22 @@ class RunningMate extends StatefulWidget {
 //--------------------------------------------
 
 class _RunningMateState extends State<RunningMate> {
-  int _countedSteps = 0;
-  double stepLength = 0.7;      //in meters
-  double sensitivity = 0.5;
-  var startTime =  DateTime.now();
+  final ValueNotifier<double> _countedSteps = ValueNotifier<double>(0);
+  final ValueNotifier<double> _cadence = ValueNotifier<double>(0);
+  final ValueNotifier<double> _speed = ValueNotifier<double>(0);
+  final ValueNotifier<double> _calories = ValueNotifier<double>(0);
+  final ValueNotifier<double> _time = ValueNotifier<double>(0); //in minutes.seconds
+  double _stepLength = 0.7; //in meters
+  double _sensitivity = 0.5; //between 0 and 1
+  int _goalCadence = 180;
+  int _weight = 70; //in kg
+  var _startTime = DateTime.now();
   bool _earableConnected = false;
   StreamSubscription? _imuSubscription;
-  bool _countingSteps = false;
+  bool _countingSteps = false; //if sensor data is being processed
   TextEditingController stepLengthController = TextEditingController();
+  TextEditingController goalCadenceController = TextEditingController();
+  TextEditingController weightController = TextEditingController();
   List<List<double>> speedMetTable = [
     [4.0, 6.0],
     [5.0, 8.3],
@@ -45,6 +55,7 @@ class _RunningMateState extends State<RunningMate> {
     [13.0, 19.8],
     [14.0, 23.0],
   ];
+  Timer? timer;
 
   ///Initialisation for the Widget.
   @override
@@ -54,8 +65,13 @@ class _RunningMateState extends State<RunningMate> {
       _earableConnected = true;
       _setupListeners();
     }
-    stepLengthController.text = stepLength.toString();
+    stepLengthController.text = _stepLength.toString();
     stepLengthController.addListener(_updateStepLength);
+    goalCadenceController.text = _goalCadence.toString();
+    goalCadenceController.addListener(_updateGoalCadence);
+    weightController.text = _weight.toString();
+    weightController.addListener(_updateWeight);
+    timer = Timer.periodic(Duration(milliseconds: 500), (Timer t) => updateView());
   }
 
   ///cancel the subscription to the sensor data stream when the app is closed.
@@ -64,11 +80,26 @@ class _RunningMateState extends State<RunningMate> {
     super.dispose();
     _imuSubscription?.cancel();
     stepLengthController.dispose();
+    goalCadenceController.dispose();
+    weightController.dispose();
+    timer?.cancel();
   }
 
   void _updateStepLength() {
     setState(() {
-      stepLength = double.tryParse(stepLengthController.text) ?? stepLength;
+      _stepLength = double.tryParse(stepLengthController.text) ?? _stepLength;
+    });
+  }
+
+  void _updateGoalCadence() {
+    setState(() {
+      _goalCadence = int.tryParse(goalCadenceController.text) ?? _goalCadence;
+    });
+  }
+
+  void _updateWeight() {
+    setState(() {
+      _weight = int.tryParse(weightController.text) ?? _goalCadence;
     });
   }
 
@@ -81,7 +112,7 @@ class _RunningMateState extends State<RunningMate> {
         .subscribeToSensorData(0)
         .listen((data) {
       if (_countingSteps) {
-          _processSensorData(data);
+        _processSensorData(data);
       }
     });
   }
@@ -94,13 +125,28 @@ class _RunningMateState extends State<RunningMate> {
     //ToDo
   }
 
+  void updateView() {
+    if (_countingSteps) {
+      int time = DateTime.now().difference(_startTime).inSeconds;
+      int minutes = time ~/ 60;
+      int seconds = time % 60;
+      _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
+      _calories.value = calculateCalories(_weight, _time.value.toDouble(), _countedSteps.value.toInt(), _stepLength).toDouble();
+    }
+  }
+
   ///builds OpenEarable SensorConfig
   OpenEarableSensorConfig _buildSensorConfig() {
     return OpenEarableSensorConfig(
       sensorId: 0,
-      samplingRate: 30,
+      samplingRate: 30, //30Hz
       latency: 0,
     );
+  }
+
+  double _dp(double val, int places){
+    num mod = pow(10.0, places);
+    return ((val * mod).round().toDouble() / mod);
   }
 
   //--------------------------- UI Stuff ---------------------------
@@ -117,25 +163,125 @@ class _RunningMateState extends State<RunningMate> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => Settings(stepLengthController: stepLengthController, sensitivity: sensitivity, onSensitivityChanged: (double value) {
-                  setState(() {
-                    sensitivity = value;
-                  });
-                },),),
+                MaterialPageRoute(
+                  builder: (context) => Settings(
+                    goalCadenceController: goalCadenceController,
+                    stepLengthController: stepLengthController,
+                    weightController: weightController,
+                    sensitivity: _sensitivity,
+                    onSensitivityChanged: (double value) {
+                      setState(() {
+                        _sensitivity = value;
+                      });
+                    },
+                  ),
+                ),
               );
             },
             icon: Icon(Icons.settings),
           ),
         ],
       ),
-     
-      body: SafeArea(child: ListView(
-        children: <Widget>[
-          Text("Test"),
-          //GpsPosition(),
-
-        ],
-      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            SizedBox(height: 20),
+            ValueListenableBuilder<double>(
+              valueListenable: _cadence,
+              builder: (context, value, child) {
+                return StatViewer(
+                  statName: "Cadence",
+                  statValue: value,
+                );
+              },
+            ),
+            SizedBox(height: 20),
+            Row(
+              //crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ValueListenableBuilder<double>(
+                  valueListenable: _speed,
+                  builder: (context, value, child) {
+                    return StatViewer(
+                      statName: "Speed",
+                      statValue: value,
+                    );
+                  },
+                ),
+                SizedBox(width: 10),
+                ValueListenableBuilder<double>(
+                  valueListenable: _time,
+                  builder: (context, value, child) {
+                    return StatViewer(
+                      statName: "Time",
+                      statValue: value,
+                    );
+                  },
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            Row(
+              //crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ValueListenableBuilder<double>(
+                  valueListenable: _calories,
+                  builder: (context, value, child) {
+                    return StatViewer(
+                      statName: "Calories",
+                      statValue: value,
+                    );
+                  },
+                ),
+                SizedBox(width: 10),
+                ValueListenableBuilder<double>(
+                  valueListenable: _countedSteps,
+                  builder: (context, value, child) {
+                    return StatViewer(
+                      statName: "Steps",
+                      statValue: value,
+                    );
+                  },
+                ),
+              ],
+            ),
+            SizedBox(height: 30),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  splashRadius: 20,
+                  icon: _countingSteps
+                      ? Icon(Icons.pause)
+                      : Icon(
+                          Icons.play_arrow,
+                        ),
+                  onPressed: () {
+                    setState(() {
+                      _countingSteps = !_countingSteps; //changing the icon.
+                      if (_countingSteps) { //Resetting the values.
+                        _startTime = DateTime.now();
+                        _time.value = 0;
+                        _countedSteps.value = 0;
+                        _calories.value = 0;
+                      }
+                    });
+                  },
+                ),
+                SizedBox(width: 10),
+                Text(
+                  _countingSteps
+                      ? "Pause Run"
+                      : "Start Run",
+                    style: TextStyle(fontSize: 20),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -148,28 +294,33 @@ class _RunningMateState extends State<RunningMate> {
     }
     widget.openEarable.audioPlayer.wavFile(filename);
   }
+
   void _play() {
     widget.openEarable.audioPlayer.setState(AudioPlayerState.start);
   }
+
   void _pause() {
     widget.openEarable.audioPlayer.setState(AudioPlayerState.pause);
   }
+
   void _stop() {
     widget.openEarable.audioPlayer.setState(AudioPlayerState.stop);
   }
 
 //--------------------------- Running stats ---------------------------
 
-  int calculateCalories(int weight, double minutes, int steps, double stepLength) {
+  int calculateCalories(
+      int weight, double minutes, int steps, double stepLength,) {
     //calculation based on METs (see https://runbundle.com/tools/running-calorie-calculator and https://en.wikipedia.org/wiki/Metabolic_equivalent_of_task)
     //does not take hills into account
+    if (minutes == 0 || steps == 0) {return 0;}
     double speed = (steps * stepLength) / (minutes * 60); //in m/h
     double mets = _lookupMets(speed);
     return (mets * weight * minutes * 60.0).round();
   }
 
   double _lookupMets(double speed) {
-    speed = speed * 0.000621371;  //convert m/h to mph
+    speed = speed * 0.000621371; //convert m/h to mph
     List<double> speeds = speedMetTable.map((pair) => pair[0]).toList();
     List<double> mets = speedMetTable.map((pair) => pair[1]).toList();
     //ensure the speed is within the bounds of the table
@@ -187,6 +338,4 @@ class _RunningMateState extends State<RunningMate> {
     }
     return 0.0; //should never be reached
   }
-
-
 }
