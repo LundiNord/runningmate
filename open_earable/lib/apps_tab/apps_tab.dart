@@ -132,9 +132,9 @@ class AppsTab extends StatelessWidget {
         },
       ),
       AppInfo(
-        logoPath: "lib/apps_tab/step_counter/assets/logo.png",
+        logoPath: "lib/apps_tab/running_mate/assets/logo.png",
         title: "Running Mate",
-        description: "Count your Steps",
+        description: "Run with Music",
         onTap: () {
           Navigator.push(
             context,

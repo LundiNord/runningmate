@@ -17,3 +17,6 @@
   - calories: https://fitness.stackexchange.com/questions/15608/energy-expenditure-calories-burned-equation-for-running?newreg=a9c81be5d8e3411a89dc63ba896d98cb
 
 
+
+/home/alpaka/StudioProjects/app/open_earable/lib/apps_tab/running_mate/assets/
+                                            /lib/apps_tab/running_mate/assets/logo.png
