@@ -55,7 +55,8 @@ class _RunningMateState extends State<RunningMate> {
     [13.0, 19.8],
     [14.0, 23.0],
   ];
-  Timer? timer;
+  Timer? viewTimer;
+  Timer? stepsTimer;
 
   ///Initialisation for the Widget.
   @override
@@ -71,7 +72,8 @@ class _RunningMateState extends State<RunningMate> {
     goalCadenceController.addListener(_updateGoalCadence);
     weightController.text = _weight.toString();
     weightController.addListener(_updateWeight);
-    timer = Timer.periodic(Duration(milliseconds: 500), (Timer t) => updateView());
+    viewTimer = Timer.periodic(Duration(milliseconds: 500), (Timer t) => updateView());
+    stepsTimer = Timer.periodic(Duration(milliseconds: 1000), (Timer t) => calculateSteps());
   }
 
   ///cancel the subscription to the sensor data stream when the app is closed.
@@ -82,7 +84,8 @@ class _RunningMateState extends State<RunningMate> {
     stepLengthController.dispose();
     goalCadenceController.dispose();
     weightController.dispose();
-    timer?.cancel();
+    viewTimer?.cancel();
+    stepsTimer?.cancel();
   }
 
   void _updateStepLength() {
@@ -119,13 +122,22 @@ class _RunningMateState extends State<RunningMate> {
 
   ///Processes the sensor data received from the OpenEarable device.
   void _processSensorData(Map<String, dynamic> data) {
+    //30Hz
     var accX = data["ACC"]["X"];
     var accY = data["ACC"]["Y"];
     var accZ = data["ACC"]["Z"];
     //ToDo
+    addToBuffer(accZ);
+  }
+  
+  void calculateSteps() { //called every second
+    //compare values of last second and identify steps
+    //ToDo
+
+    
   }
 
-  void updateView() {
+  void updateView() { //called every 0,5 seconds
     if (_countingSteps) {
       int time = DateTime.now().difference(_startTime).inSeconds;
       int minutes = time ~/ 60;
@@ -133,6 +145,26 @@ class _RunningMateState extends State<RunningMate> {
       _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
       _calories.value = calculateCalories(_weight, _time.value.toDouble(), _countedSteps.value.toInt(), _stepLength).toDouble();
     }
+  }
+
+  //a ring buffer to store last acc values
+  static final int _ringBufferSize = 30;
+  final List<double> _ringBuffer = List.filled(_ringBufferSize, 0);
+  int _pointer = 0; //point to next free slot in ring buffer
+  void addToBuffer(double value) {
+    _ringBuffer[_pointer] = value;
+    _pointer++;
+    if (_pointer == _ringBufferSize) {
+      _pointer = 0;
+    }
+  }
+  double getFromBuffer(int offset) {
+    //index negative relative to pointer
+    //get 1: item behind pointer -1, get 0: get last updated item
+    if (offset >= 30) {
+      return 0;
+    }
+    return _ringBuffer[(_pointer - offset) % _ringBufferSize];
   }
 
   ///builds OpenEarable SensorConfig
@@ -288,6 +320,26 @@ class _RunningMateState extends State<RunningMate> {
 
   //--------------------------- Audio Stuff ---------------------------
 
+  void playRunningAudio(int bpm, OpenEarable openEarable, int goalBpm) {
+    //app expects 30-100bpm files to be present
+    String filename = "";
+    int alternative = 1; //ToDo
+    if (bpm < 30) {
+      filename = "30";
+    } else if (bpm > 200) {
+      filename = "200";
+    } else {
+      double beats = bpm / 10;
+      if (goalBpm < bpm) {
+        filename = "${beats.floor() * 10}";
+      } else {
+        filename = "${beats.ceil() * 10}";
+      }
+    }
+    filename = "${filename}_$alternative.wav";
+    _setAudio(filename);
+  }
+
   void _setAudio(String filename) {
     if (filename == "" || !filename.endsWith('.wav')) {
       return;
@@ -309,8 +361,7 @@ class _RunningMateState extends State<RunningMate> {
 
 //--------------------------- Running stats ---------------------------
 
-  int calculateCalories(
-      int weight, double minutes, int steps, double stepLength,) {
+  int calculateCalories(int weight, double minutes, int steps, double stepLength,) {
     //calculation based on METs (see https://runbundle.com/tools/running-calorie-calculator and https://en.wikipedia.org/wiki/Metabolic_equivalent_of_task)
     //does not take hills into account
     if (minutes == 0 || steps == 0) {return 0;}
