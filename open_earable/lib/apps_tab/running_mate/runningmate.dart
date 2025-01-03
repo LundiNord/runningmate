@@ -131,10 +131,27 @@ class _RunningMateState extends State<RunningMate> {
   }
   
   void calculateSteps() { //called every second
-    //compare values of last second and identify steps
-    //ToDo
+    //ToDo maybe with https://github.com/Oxford-step-counter/Java-Step-Counter/tree/master/src/main/java/uk/ac/ox/eng/stepcounter
 
-    
+    //compare last values and identify spikes over threshold
+    //assumption: data does not change while this method runs
+    int increaseThreshold = 5;
+    int timeThreshold = 2; //in data points
+    for (int i = 0; i < _ringBufferSize; i++) { //got through all data points and look fpr spikes in threshold interval
+      if (getFromBuffer(i) == _emptyValue) {
+        continue;
+      }
+      for (int j = 1; j <= timeThreshold; j++) {
+        if (getFromBuffer(i) - getFromBuffer(i + j) > increaseThreshold) {
+          _countedSteps.value++;
+          //remove already processed values
+          for (int k = 0; k < j; k++) {
+            addToBuffer(_emptyValue);
+          }
+          break;
+        }
+      }
+    }
   }
 
   void updateView() { //called every 0,5 seconds
@@ -144,12 +161,15 @@ class _RunningMateState extends State<RunningMate> {
       int seconds = time % 60;
       _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
       _calories.value = calculateCalories(_weight, _time.value.toDouble(), _countedSteps.value.toInt(), _stepLength).toDouble();
+      _cadence.value = _countedSteps.value / _time.value * 60;
+      _speed.value = _stepLength * _cadence.value / 1000 * 60; //in km/h
     }
   }
 
   //a ring buffer to store last acc values
   static final int _ringBufferSize = 30;
-  final List<double> _ringBuffer = List.filled(_ringBufferSize, 0);
+  static final double _emptyValue = -99;  //a placeholder for empty slots
+  final List<double> _ringBuffer = List.filled(_ringBufferSize, _emptyValue);
   int _pointer = 0; //point to next free slot in ring buffer
   void addToBuffer(double value) {
     _ringBuffer[_pointer] = value;
