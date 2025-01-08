@@ -43,10 +43,9 @@ class _StatViewerState extends State<StatViewer> {
             style: _retroText,
           ),
         ],
-      )
+      ),
     );
   }
-
 
   TextStyle get _retroText => TextStyle(
     fontSize: 20,
@@ -59,6 +58,5 @@ class _StatViewerState extends State<StatViewer> {
       ),
     ],
   );
-
 
 }

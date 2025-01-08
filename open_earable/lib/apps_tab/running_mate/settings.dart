@@ -51,7 +51,7 @@ class Settings extends StatelessWidget {
                     title: Text("Step Counter Sensitivity"),
                     leading: Icon(Icons.edgesensor_high),
                     trailing: SizedBox(
-                      width: 280,
+                      width: 200,
                       child: SensiSlider(
                           onSensitivityChanged: onSensitivityChanged,
                           sensitivity: sensitivity),

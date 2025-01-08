@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
 import 'dart:async';
+import 'package:circular_buffer/circular_buffer.dart';
 
 ///
 class RunningMate extends StatefulWidget {
@@ -32,6 +33,7 @@ class _RunningMateState extends State<RunningMate> {
   int _goalCadence = 180;
   int _weight = 70; //in kg
   var _startTime = DateTime.now();
+  final _lastStepValues = CircularBuffer<int>(4); //last 2s
   bool _earableConnected = false;
   StreamSubscription? _imuSubscription;
   bool _countingSteps = false; //if sensor data is being processed
@@ -57,6 +59,7 @@ class _RunningMateState extends State<RunningMate> {
   ];
   Timer? viewTimer;
   Timer? stepsTimer;
+  final GlobalKey<GpsPositionState> _gpsPositionKey = GlobalKey<GpsPositionState>(); //key to access the state gps position widget
 
   ///Initialisation for the Widget.
   @override
@@ -161,7 +164,10 @@ class _RunningMateState extends State<RunningMate> {
       int seconds = time % 60;
       _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
       _calories.value = calculateCalories(_weight, _time.value.toDouble(), _countedSteps.value.toInt(), _stepLength).toDouble();
-      _cadence.value = _countedSteps.value / _time.value * 60;
+      //Cadence: Running average, cadence is in steps per minute
+      _lastStepValues.add(_countedSteps.value.toInt());
+      _cadence.value = (_lastStepValues.first - _lastStepValues.last )/ 2 * 60;
+      //
       _speed.value = _stepLength * _cadence.value / 1000 * 60; //in km/h
     }
   }
@@ -201,6 +207,10 @@ class _RunningMateState extends State<RunningMate> {
     return ((val * mod).round().toDouble() / mod);
   }
 
+  void calculateStepLength(){ //ToDo
+    _stepLength = _gpsPositionKey.currentState!.calculateStepLength(_countedSteps.value as int);
+  }
+
   //--------------------------- UI Stuff ---------------------------
 
   ///Builds the ui widget.
@@ -209,7 +219,7 @@ class _RunningMateState extends State<RunningMate> {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        title: Text('StepCounter'),
+        title: Text('Running Mate'),
         actions: [
           IconButton(
             onPressed: () {
@@ -314,6 +324,7 @@ class _RunningMateState extends State<RunningMate> {
                   onPressed: () {
                     setState(() {
                       _countingSteps = !_countingSteps; //changing the icon.
+                      _gpsPositionKey.currentState?.setRecording(_countingSteps); //tell gps widget to start/stop recording
                       if (_countingSteps) { //Resetting the values.
                         _startTime = DateTime.now();
                         _time.value = 0;
@@ -332,6 +343,25 @@ class _RunningMateState extends State<RunningMate> {
                 ),
               ],
             ),
+            SizedBox(height: 10),
+            Divider(
+              color: Colors.green,
+              thickness: 3,
+              indent: 40,
+              endIndent: 40,
+            ),
+            SizedBox(height: 10),
+            Row(
+              children: [
+                SizedBox(width: 45),
+                Text(
+                  "GPS Stats",
+                  style: TextStyle(fontSize: 20),
+                  textAlign: TextAlign.left,
+                ),
+              ],
+            ),
+          GpsPosition(key: _gpsPositionKey),
           ],
         ),
       ),

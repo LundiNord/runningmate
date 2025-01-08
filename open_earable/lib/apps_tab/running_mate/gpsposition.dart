@@ -18,28 +18,37 @@ class GpsPosition extends StatefulWidget {
 class GpsPositionState extends State<GpsPosition> {
   final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
   final List<Position> _positionItems = <Position>[];
+  Timer? gpsTimer;
+  var positionString = "Position: 0, 0";
+  var speedString = "0.0";
+  late StreamSubscription<Position> positionStream;
+  var recording = false;
 
-  StreamSubscription<Position>? _positionStreamSubscription;
-  StreamSubscription<ServiceStatus>? _serviceStatusStreamSubscription;
-  bool positionStreamStarted = false;
-
-  //--------------------------- GPS Stuff ---------------------------
+  //--------------------------- Widget State ---------------------------
 
   ///initialisation for the Widget.
   @override
   void initState() {
     super.initState();
-    _toggleServiceStatusStream();
+    gpsTimer = Timer.periodic(Duration(milliseconds: 1500), (Timer t) => updateView());
+    positionStream = Geolocator.getPositionStream(locationSettings:  LocationSettings(
+      accuracy: LocationAccuracy.high,),).listen((Position? position) {
+      _positionItems.add(position!);
+    });
   }
 
   @override
   void dispose() {
     super.dispose();
-    if (_positionStreamSubscription != null) {
-      _positionStreamSubscription!.cancel();
-      _positionStreamSubscription = null;
-    }
+    positionStream.cancel();
+    gpsTimer?.cancel();
   }
+
+  void setRecording(bool value) {
+    recording = value;
+  }
+
+  //--------------------------- GPS Stuff ---------------------------
 
   final LocationSettings locationSettings = LocationSettings(
     accuracy: LocationAccuracy.high,
@@ -52,6 +61,15 @@ class GpsPositionState extends State<GpsPosition> {
     }
     final position = await _geolocatorPlatform.getCurrentPosition(locationSettings: locationSettings);
     _positionItems.add(position);
+  }
+
+  String getPositionString() {
+    //_getCurrentPosition();
+    if (_positionItems.isEmpty) {
+      return "Position: 0, 0";
+    }
+    var position = _positionItems.last;
+    return "Position: ${position.latitude}, ${position.longitude}";
   }
 
   Future<bool> _handlePermission() async {
@@ -79,61 +97,80 @@ class GpsPositionState extends State<GpsPosition> {
 
   //--------------------------- Continuous Location ---------------------------
 
-  void _toggleServiceStatusStream() {
-    if (_serviceStatusStreamSubscription == null) {
-      final serviceStatusStream = _geolocatorPlatform.getServiceStatusStream();
-      _serviceStatusStreamSubscription =
-          serviceStatusStream.handleError((error) {
-            _serviceStatusStreamSubscription?.cancel();
-            _serviceStatusStreamSubscription = null;
-          }).listen((serviceStatus) {
-            String serviceStatusValue;
-            if (serviceStatus == ServiceStatus.enabled) {
-              if (positionStreamStarted) {
-                _toggleListening();
-              }
-            } else {
-              if (_positionStreamSubscription != null) {
-                setState(() {
-                  _positionStreamSubscription?.cancel();
-                  _positionStreamSubscription = null;
-                });
-              }
-            }
-          });
-    }
+  void startRecording() {
+    _positionItems.clear();
+    //positionStream.resume();
+    recording = true;
   }
 
-  void _toggleListening() {
-    if (_positionStreamSubscription == null) {
-      final positionStream = _geolocatorPlatform.getPositionStream();
-      _positionStreamSubscription = positionStream.handleError((error) {
-        _positionStreamSubscription?.cancel();
-        _positionStreamSubscription = null;
-      }).listen(_positionItems.add);
-      _positionStreamSubscription?.pause();
+  void stopRecording() {
+    //positionStream.pause();
+    recording = false;
+  }
+
+  //--------------------------- Stats ---------------------------
+
+  double calculateDistance() {  //in meters
+    double distance = 0;
+    for (int i = 0; i < _positionItems.length - 1; i++) {
+      distance += Geolocator.distanceBetween(
+          _positionItems[i].latitude,
+          _positionItems[i].longitude,
+          _positionItems[i + 1].latitude,
+          _positionItems[i + 1].longitude);
     }
+    return distance;
+  }
+
+  double calculateTime() {    //in seconds
+    if (_positionItems.isEmpty) {
+      return 0;
+    }
+    return (_positionItems.last.timestamp.millisecondsSinceEpoch - _positionItems.first.timestamp.millisecondsSinceEpoch) / 1000;
+  }
+
+  double calculateMeanSpeed() {
+    if (_positionItems.isEmpty) {
+      return 0;
+    }
+    return calculateDistance() / calculateTime();
+  }
+
+  double getSpeed() { //in m/s
+    if (_positionItems.isEmpty) {
+      return 0;
+    }
+    return _positionItems.last.speed;
+  }
+
+  double calculateStepLength(int steps) {
+    if (steps == 0 || _positionItems.isEmpty || !recording) {
+      return 0;
+    }
+    var distance = calculateDistance();
+    return distance / steps;
+  }
+
+  //--------------------------- UI ---------------------------
+
+  void updateView() {
     setState(() {
-      if (_positionStreamSubscription == null) {
-        return;
-      }
-      if (_positionStreamSubscription!.isPaused) {
-        _positionStreamSubscription!.resume();
-      } else {
-        _positionStreamSubscription!.pause();
-      }
+      positionString = getPositionString();
+      speedString = "Speed: ${getSpeed()}";
     });
-  }
+    //print(positionString);
 
-  //--------------------------- UI Stuff ---------------------------
+
+  }
 
   ///Builds the ui widget.
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    return Column(
       children: <Widget>[
         Text("Test"),
-        Text(_geolocatorPlatform.getCurrentPosition(locationSettings: locationSettings) as String)
+        Text(positionString),
+        Text(speedString),
       ],
     );
   }

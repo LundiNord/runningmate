@@ -2,6 +2,8 @@
 
 ### File Format
 
+Format SD-Card with exFAT.
+
 Example: 180_1.wav, 180_2.wav
 
 180: bpm to sync to
