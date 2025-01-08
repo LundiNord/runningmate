@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+///A Widget that can be used to display and change the settings of the Running Mate App.
 class Settings extends StatelessWidget {
   final TextEditingController stepLengthController;
   final TextEditingController goalCadenceController;
   final TextEditingController weightController;
+  final TextEditingController songCountController;
   final ValueChanged<double> onSensitivityChanged;
   final double sensitivity;
-  const Settings(
-      {super.key,
-      required this.stepLengthController,
-      required this.onSensitivityChanged,
-      required this.sensitivity,
-      required this.goalCadenceController,
-      required this.weightController,});
+  const Settings({
+    super.key,
+    required this.stepLengthController,
+    required this.onSensitivityChanged,
+    required this.sensitivity,
+    required this.goalCadenceController,
+    required this.weightController,
+    required this.songCountController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +97,45 @@ class Settings extends StatelessWidget {
                       ),
                     ),
                   ),
+                  SizedBox(
+                    height: 10,
+                  ),
+                  Divider(
+                    color: Colors.white,
+                  ),
+                  Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text(
+                      "How to setup music:",
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text(
+                      "Format SD-Card with exFAT. Place music in root. Use name like: bpm_number.wav (180_1.wav) where the first ist the bpm of the song and the last number is the song number. Only WAV Files, Format tag: PCM, single Channels (Mono), 44100 Sample rate, and 16 Bits per Sample audio files are supported.",
+                      style: TextStyle(fontSize: 15),
+                    ),
+                  ),
+                  ListTile(
+                    title: Text("Number of Songs per BPM"),
+                    leading: Icon(Icons.pin),
+                    trailing: SizedBox(
+                      width: 100,
+                      child: TextField(
+                        controller: songCountController,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Enter number of songs',
+                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -111,8 +154,9 @@ class Settings extends StatelessWidget {
   }
 }
 
-//--------------------------- UI Classes ---------------------------
+//--------------------------- Extra UI Classes ---------------------------
 
+///A stepped slider that can change a sensitivity.
 class SensiSlider extends StatefulWidget {
   final ValueChanged<double> onSensitivityChanged;
   final double sensitivity;

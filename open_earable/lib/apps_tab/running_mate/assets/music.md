@@ -10,6 +10,9 @@ Example: 180_1.wav, 180_2.wav
 
 number: song number, song will be chosen randomly
 
+only WAV Files, Format tag: PCM, single Channels (Mono), 44100 Sample rate,
+and 16 Bits per Sample audio files are supported.
+
 ### Source
 
 bpm audio files by https://www.reuneker.nl/files/metronome/

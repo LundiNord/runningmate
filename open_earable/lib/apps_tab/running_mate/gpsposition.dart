@@ -1,12 +1,10 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:open_earable/ble/ble_controller.dart';
-import 'package:open_earable/shared/earable_not_connected_warning.dart';
 import 'dart:async';
-import 'package:open_earable_flutter/open_earable_flutter.dart';
-import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:open_earable/apps_tab/running_mate/stat_viewer.dart';
 
-///
+/// A Widget that can be used to display the current GPS position and some calculated stats.
 class GpsPosition extends StatefulWidget {
   const GpsPosition({super.key});
   @override
@@ -15,14 +13,18 @@ class GpsPosition extends StatefulWidget {
 
 //--------------------------------------------
 
+/// A Widget that can be used to display the current GPS position and some calculated stats.
 class GpsPositionState extends State<GpsPosition> {
   final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
   final List<Position> _positionItems = <Position>[];
   Timer? gpsTimer;
-  var positionString = "Position: 0, 0";
-  var speedString = "0.0";
-  late StreamSubscription<Position> positionStream;
-  var recording = false;
+  var _positionString = "Position: 0, 0"; //ToDo remove in production?
+  final ValueNotifier<double> _speed = ValueNotifier<double>(0);
+  final ValueNotifier<double> _distance = ValueNotifier<double>(0);
+  final ValueNotifier<double> _stepLength = ValueNotifier<double>(0);
+  int _steps = 0;
+  late StreamSubscription<Position> _positionStream;
+  var _recording = false;
 
   //--------------------------- Widget State ---------------------------
 
@@ -30,9 +32,13 @@ class GpsPositionState extends State<GpsPosition> {
   @override
   void initState() {
     super.initState();
-    gpsTimer = Timer.periodic(Duration(milliseconds: 1500), (Timer t) => updateView());
-    positionStream = Geolocator.getPositionStream(locationSettings:  LocationSettings(
-      accuracy: LocationAccuracy.high,),).listen((Position? position) {
+    gpsTimer = Timer.periodic(
+        Duration(milliseconds: 1500), (Timer t) => _updateView());
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        accuracy: LocationAccuracy.high,
+      ),
+    ).listen((Position? position) {
       _positionItems.add(position!);
     });
   }
@@ -40,12 +46,16 @@ class GpsPositionState extends State<GpsPosition> {
   @override
   void dispose() {
     super.dispose();
-    positionStream.cancel();
+    _positionStream.cancel();
     gpsTimer?.cancel();
   }
 
+  ///Can be called from outside to change if data should be recorded and displayed.
   void setRecording(bool value) {
-    recording = value;
+    _recording = value;
+    if (_recording) {
+      _positionItems.clear();
+    }
   }
 
   //--------------------------- GPS Stuff ---------------------------
@@ -54,24 +64,27 @@ class GpsPositionState extends State<GpsPosition> {
     accuracy: LocationAccuracy.high,
   );
 
+  ///Gets the current position from the devices and adds it to the position list.
   Future<void> _getCurrentPosition() async {
     final hasPermission = await _handlePermission();
     if (!hasPermission) {
       return;
     }
-    final position = await _geolocatorPlatform.getCurrentPosition(locationSettings: locationSettings);
+    final position = await _geolocatorPlatform.getCurrentPosition(
+        locationSettings: locationSettings);
     _positionItems.add(position);
   }
 
-  String getPositionString() {
-    //_getCurrentPosition();
+  ///Returns a string with the current GPS position.
+  String _getPositionString() {
     if (_positionItems.isEmpty) {
       return "Position: 0, 0";
     }
     var position = _positionItems.last;
-    return "Position: ${position.latitude}, ${position.longitude}";
+    return "Position: ${_round(position.latitude, 6)}, ${_round(position.longitude, 6)}";
   }
 
+  ///Get Location Permissions from the Android OS.
   Future<bool> _handlePermission() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -95,22 +108,11 @@ class GpsPositionState extends State<GpsPosition> {
     return true;
   }
 
-  //--------------------------- Continuous Location ---------------------------
-
-  void startRecording() {
-    _positionItems.clear();
-    //positionStream.resume();
-    recording = true;
-  }
-
-  void stopRecording() {
-    //positionStream.pause();
-    recording = false;
-  }
-
   //--------------------------- Stats ---------------------------
 
-  double calculateDistance() {  //in meters
+  ///Getter for the Distance since recording boolean was last changed.
+  double calculateDistance() {
+    //in meters
     double distance = 0;
     for (int i = 0; i < _positionItems.length - 1; i++) {
       distance += Geolocator.distanceBetween(
@@ -119,16 +121,22 @@ class GpsPositionState extends State<GpsPosition> {
           _positionItems[i + 1].latitude,
           _positionItems[i + 1].longitude);
     }
+    print(distance.toString());
     return distance;
   }
 
-  double calculateTime() {    //in seconds
+  ///Getter for the Time since recording boolean was last changed.
+  double calculateTime() {
+    //in seconds
     if (_positionItems.isEmpty) {
       return 0;
     }
-    return (_positionItems.last.timestamp.millisecondsSinceEpoch - _positionItems.first.timestamp.millisecondsSinceEpoch) / 1000;
+    return (_positionItems.last.timestamp.millisecondsSinceEpoch -
+            _positionItems.first.timestamp.millisecondsSinceEpoch) /
+        1000;
   }
 
+  ///Getter for the mean gps speed since recording boolean was last changed.
   double calculateMeanSpeed() {
     if (_positionItems.isEmpty) {
       return 0;
@@ -136,15 +144,24 @@ class GpsPositionState extends State<GpsPosition> {
     return calculateDistance() / calculateTime();
   }
 
-  double getSpeed() { //in m/s
+  ///Getter for the speed at the latest position point.
+  double getSpeed() {
+    //in m/s
     if (_positionItems.isEmpty) {
       return 0;
     }
     return _positionItems.last.speed;
   }
 
+  ///Can be used from outside to set steps for step length display on the widget.
+  void setSteps(int steps) {
+    _steps = steps;
+  }
+
+  ///Can be used from outside to get the step length from GPS Distance data.
   double calculateStepLength(int steps) {
-    if (steps == 0 || _positionItems.isEmpty || !recording) {
+    //in m
+    if (steps == 0 || _positionItems.isEmpty || !_recording) {
       return 0;
     }
     var distance = calculateDistance();
@@ -153,14 +170,20 @@ class GpsPositionState extends State<GpsPosition> {
 
   //--------------------------- UI ---------------------------
 
-  void updateView() {
-    setState(() {
-      positionString = getPositionString();
-      speedString = "Speed: ${getSpeed()}";
-    });
-    //print(positionString);
+  ///gets called by a timer to update the view.
+  void _updateView() {
+    if (_recording) {
+      _positionString = _getPositionString();
+      _speed.value = _round(getSpeed(), 2);
+      _distance.value = _round(calculateDistance(), 2);
+      _stepLength.value = _round(calculateStepLength(_steps), 2);
+    }
+  }
 
-
+  ///Rounds a double to a certain number of decimal places.
+  double _round(double val, int places) {
+    num mod = pow(10.0, places);
+    return ((val * mod).round().toDouble() / mod);
   }
 
   ///Builds the ui widget.
@@ -168,12 +191,71 @@ class GpsPositionState extends State<GpsPosition> {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        Text("Test"),
-        Text(positionString),
-        Text(speedString),
+        SizedBox(
+          height: 10,
+        ),
+        Row(
+          children: [
+            SizedBox(
+              width: 50,
+            ),
+            ValueListenableBuilder<double>(
+              valueListenable: _speed,
+              builder: (context, value, child) {
+                return StatViewer(
+                  statName: "Speed (m/s)",
+                  statValue: value,
+                );
+              },
+            ),
+            SizedBox(
+              width: 10,
+            ),
+            ValueListenableBuilder<double>(
+              valueListenable: _distance,
+              builder: (context, value, child) {
+                return StatViewer(
+                  statName: "Distance(m)",
+                  statValue: value,
+                );
+              },
+            ),
+          ],
+        ),
+        SizedBox(
+          height: 20,
+        ),
+        Row(
+          children: [
+            SizedBox(
+              width: 50,
+            ),
+            ValueListenableBuilder<double>(
+              valueListenable: _stepLength,
+              builder: (context, value, child) {
+                return StatViewer(
+                  statName: "Step Length",
+                  statValue: value,
+                );
+              },
+            ),
+            SizedBox(
+              width: 10,
+            ),
+            Flexible(
+              child: Text(
+                _positionString,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 4,
+                textAlign: TextAlign.start,
+              ),
+            ),
+            SizedBox(
+              width: 50,
+            ),
+          ],
+        ),
       ],
     );
   }
-
 }
-
