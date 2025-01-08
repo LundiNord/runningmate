@@ -22,6 +22,7 @@ class RunningMate extends StatefulWidget {
 
 //--------------------------------------------
 
+///
 class _RunningMateState extends State<RunningMate> {
   final ValueNotifier<double> _countedSteps = ValueNotifier<double>(0);
   final ValueNotifier<double> _cadence = ValueNotifier<double>(0);
@@ -129,16 +130,16 @@ class _RunningMateState extends State<RunningMate> {
     var accX = data["ACC"]["X"];
     var accY = data["ACC"]["Y"];
     var accZ = data["ACC"]["Z"];
-    //ToDo
     addToBuffer(accZ);
   }
-  
+
+  ///Calculates number of steps taken based on values in the ring buffer.
   void calculateSteps() { //called every second
     //ToDo maybe with https://github.com/Oxford-step-counter/Java-Step-Counter/tree/master/src/main/java/uk/ac/ox/eng/stepcounter
 
     //compare last values and identify spikes over threshold
     //assumption: data does not change while this method runs
-    int increaseThreshold = 5;
+    int increaseThreshold = 50;
     int timeThreshold = 2; //in data points
     for (int i = 0; i < _ringBufferSize; i++) { //got through all data points and look fpr spikes in threshold interval
       if (getFromBuffer(i) == _emptyValue) {
@@ -147,6 +148,7 @@ class _RunningMateState extends State<RunningMate> {
       for (int j = 1; j <= timeThreshold; j++) {
         if (getFromBuffer(i) - getFromBuffer(i + j) > increaseThreshold) {
           _countedSteps.value++;
+          print("Step taken: ${_countedSteps.value} | data[i]: ${getFromBuffer(i)} | data[i+j]: ${getFromBuffer(i + j)}");
           //remove already processed values
           for (int k = 0; k < j; k++) {
             addToBuffer(_emptyValue);
@@ -163,11 +165,10 @@ class _RunningMateState extends State<RunningMate> {
       int minutes = time ~/ 60;
       int seconds = time % 60;
       _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
-      _calories.value = calculateCalories(_weight, _time.value.toDouble(), _countedSteps.value.toInt(), _stepLength).toDouble();
+      _calories.value = calculateCalories(_weight, time, _countedSteps.value.toInt(), _stepLength).toDouble();
       //Cadence: Running average, cadence is in steps per minute
       _lastStepValues.add(_countedSteps.value.toInt());
-      _cadence.value = (_lastStepValues.first - _lastStepValues.last )/ 2 * 60;
-      //
+      _cadence.value = (_lastStepValues.last - _lastStepValues.first)/ 2 * 60;  //lastStepValues has 4 elements -> 2s
       _speed.value = _stepLength * _cadence.value / 1000 * 60; //in km/h
     }
   }
@@ -202,18 +203,13 @@ class _RunningMateState extends State<RunningMate> {
     );
   }
 
-  double _dp(double val, int places){
-    num mod = pow(10.0, places);
-    return ((val * mod).round().toDouble() / mod);
-  }
-
   void calculateStepLength(){ //ToDo
     _stepLength = _gpsPositionKey.currentState!.calculateStepLength(_countedSteps.value as int);
   }
 
   //--------------------------- UI Stuff ---------------------------
 
-  ///Builds the ui widget.
+  ///Builds the ui widgets.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -411,15 +407,18 @@ class _RunningMateState extends State<RunningMate> {
 
 //--------------------------- Running stats ---------------------------
 
-  int calculateCalories(int weight, double minutes, int steps, double stepLength,) {
+  ///Simple Calorie Calculator without advanced variables like gradients. weight in kg, stepLength in m
+  int calculateCalories(int weight, int seconds, int steps, double stepLength,) {
     //calculation based on METs (see https://runbundle.com/tools/running-calorie-calculator and https://en.wikipedia.org/wiki/Metabolic_equivalent_of_task)
     //does not take hills into account
-    if (minutes == 0 || steps == 0) {return 0;}
-    double speed = (steps * stepLength) / (minutes * 60); //in m/h
+    if (seconds == 0 || steps == 0) {return 0;}
+    double speed = (steps * stepLength) / (seconds * 3600); //in m/h
     double mets = _lookupMets(speed);
-    return (mets * weight * minutes * 60.0).round();
+    print("Mets:$mets");
+    return (mets * weight * seconds * 3600).round();
   }
 
+  ///Calculates the Metabolic Equivalent of Task (MET) based on the speed in m/h.
   double _lookupMets(double speed) {
     speed = speed * 0.000621371; //convert m/h to mph
     List<double> speeds = speedMetTable.map((pair) => pair[0]).toList();
