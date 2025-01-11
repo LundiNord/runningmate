@@ -5,8 +5,7 @@ class StatViewer extends StatefulWidget {
   final String statName;
   final double statValue;
 
-  const StatViewer(
-      {super.key, required this.statName, required this.statValue});
+  const StatViewer({super.key, required this.statName, required this.statValue});
 
   @override
   State<StatViewer> createState() => _StatViewerState();

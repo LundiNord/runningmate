@@ -18,7 +18,7 @@ class GpsPositionState extends State<GpsPosition> {
   final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
   final List<Position> _positionItems = <Position>[];
   Timer? gpsTimer;
-  var _positionString = "Position: 0, 0"; //ToDo remove in production?
+  var _positionString = "Position: 0, 0";
   final ValueNotifier<double> _speed = ValueNotifier<double>(0);
   final ValueNotifier<double> _distance = ValueNotifier<double>(0);
   final ValueNotifier<double> _stepLength = ValueNotifier<double>(0);
@@ -32,8 +32,8 @@ class GpsPositionState extends State<GpsPosition> {
   @override
   void initState() {
     super.initState();
-    gpsTimer = Timer.periodic(
-        Duration(milliseconds: 1500), (Timer t) => _updateView());
+    _handlePermission();
+    gpsTimer = Timer.periodic(Duration(milliseconds: 1500), (Timer t) => _updateView());
     _positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -63,17 +63,6 @@ class GpsPositionState extends State<GpsPosition> {
   final LocationSettings locationSettings = LocationSettings(
     accuracy: LocationAccuracy.high,
   );
-
-  ///Gets the current position from the devices and adds it to the position list.
-  Future<void> _getCurrentPosition() async {
-    final hasPermission = await _handlePermission();
-    if (!hasPermission) {
-      return;
-    }
-    final position = await _geolocatorPlatform.getCurrentPosition(
-        locationSettings: locationSettings);
-    _positionItems.add(position);
-  }
 
   ///Returns a string with the current GPS position.
   String _getPositionString() {
@@ -119,9 +108,9 @@ class GpsPositionState extends State<GpsPosition> {
           _positionItems[i].latitude,
           _positionItems[i].longitude,
           _positionItems[i + 1].latitude,
-          _positionItems[i + 1].longitude);
+          _positionItems[i + 1].longitude,);
     }
-    print(distance.toString());
+    //print(distance.toString());
     return distance;
   }
 
@@ -172,8 +161,10 @@ class GpsPositionState extends State<GpsPosition> {
 
   ///gets called by a timer to update the view.
   void _updateView() {
-    if (_recording) {
+    setState(() {
       _positionString = _getPositionString();
+    });
+    if (_recording) {
       _speed.value = _round(getSpeed(), 2);
       _distance.value = _round(calculateDistance(), 2);
       _stepLength.value = _round(calculateStepLength(_steps), 2);
@@ -191,45 +182,37 @@ class GpsPositionState extends State<GpsPosition> {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        SizedBox(
-          height: 10,
+        SizedBox(height: 10),
+        Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ValueListenableBuilder<double>(
+                valueListenable: _speed,
+                builder: (context, value, child) {
+                  return StatViewer(
+                    statName: "Speed (m/s)",
+                    statValue: value,
+                  );
+                },
+              ),
+              SizedBox(width: 10),
+              ValueListenableBuilder<double>(
+                valueListenable: _distance,
+                builder: (context, value, child) {
+                  return StatViewer(
+                    statName: "Distance(m)",
+                    statValue: value,
+                  );
+                },
+              ),
+            ],
+          ),
         ),
+        SizedBox(height: 20),
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
-              width: 50,
-            ),
-            ValueListenableBuilder<double>(
-              valueListenable: _speed,
-              builder: (context, value, child) {
-                return StatViewer(
-                  statName: "Speed (m/s)",
-                  statValue: value,
-                );
-              },
-            ),
-            SizedBox(
-              width: 10,
-            ),
-            ValueListenableBuilder<double>(
-              valueListenable: _distance,
-              builder: (context, value, child) {
-                return StatViewer(
-                  statName: "Distance(m)",
-                  statValue: value,
-                );
-              },
-            ),
-          ],
-        ),
-        SizedBox(
-          height: 20,
-        ),
-        Row(
-          children: [
-            SizedBox(
-              width: 50,
-            ),
             ValueListenableBuilder<double>(
               valueListenable: _stepLength,
               builder: (context, value, child) {
@@ -239,19 +222,16 @@ class GpsPositionState extends State<GpsPosition> {
                 );
               },
             ),
+            SizedBox(width: 10),
             SizedBox(
-              width: 10,
-            ),
-            Flexible(
+              width: 150,
+              height: 70,
               child: Text(
                 _positionString,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 4,
                 textAlign: TextAlign.start,
               ),
-            ),
-            SizedBox(
-              width: 50,
             ),
           ],
         ),

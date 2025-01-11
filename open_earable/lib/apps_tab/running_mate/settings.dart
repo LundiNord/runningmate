@@ -58,7 +58,7 @@ class Settings extends StatelessWidget {
                       width: 200,
                       child: SensiSlider(
                           onSensitivityChanged: onSensitivityChanged,
-                          sensitivity: sensitivity),
+                          sensitivity: sensitivity,),
                     ),
                   ),
                   ListTile(
@@ -163,7 +163,7 @@ class SensiSlider extends StatefulWidget {
   const SensiSlider(
       {super.key,
       required this.onSensitivityChanged,
-      required this.sensitivity});
+      required this.sensitivity,});
   @override
   State<SensiSlider> createState() =>
       _SensiSliderState(sensitivity: sensitivity);

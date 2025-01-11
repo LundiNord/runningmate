@@ -34,8 +34,9 @@ class _RunningMateState extends State<RunningMate> {
   int _goalCadence = 180; //in steps per minute
   int _weight = 70; //in kg
   var _startTime = DateTime.now();
-  final _lastStepValues = CircularBuffer<int>(4); //holds values from the last 2s
+  final _lastStepValues = CircularBuffer<int>(10); //holds values from the last 5s
   int _numberOfAlternativeSongs = 1;
+  int _playingBpm = 0; //the bpm of the currently playing audio, 0 if no audio is playing
   StreamSubscription? _imuSubscription;
   bool _countingSteps = false; //if sensor data is being processed
   TextEditingController stepLengthController = TextEditingController();
@@ -44,7 +45,7 @@ class _RunningMateState extends State<RunningMate> {
   TextEditingController numberSongsController = TextEditingController();
   final List<List<double>> _speedMetTable = [
     //data from https://sites.google.com/site/compendiumofphysicalactivities/Activity-Categories/running
-    [0.0, 0.0], //mph, METs
+    [0.0, 2.0], //mph, METs
     [4.0, 6.0],
     [5.0, 8.3],
     [5.2, 9.0],
@@ -84,7 +85,7 @@ class _RunningMateState extends State<RunningMate> {
     numberSongsController.addListener(_updateNumberOfAlternativeSongs);
     viewTimer = Timer.periodic(Duration(milliseconds: 500), (Timer t) => _updateView());
     stepsTimer = Timer.periodic(Duration(milliseconds: 1000), (Timer t) => _calculateSteps(),);
-    audioTimer = Timer.periodic(Duration(seconds: 3), (Timer t) => _updateAudio());
+    audioTimer = Timer.periodic(Duration(seconds: 4), (Timer t) => _updateAudio());
   }
 
   ///cancel the subscription to the sensor data stream and other controllers and timers when the app is closed.
@@ -148,8 +149,6 @@ class _RunningMateState extends State<RunningMate> {
   ///Processes the sensor data received from the OpenEarable device.
   void _processSensorData(Map<String, dynamic> data) {
     //30Hz
-    var accX = data["ACC"]["X"];
-    var accY = data["ACC"]["Y"];
     var accZ = data["ACC"]["Z"];
     _addToBuffer(accZ);
   }
@@ -157,7 +156,8 @@ class _RunningMateState extends State<RunningMate> {
   ///Calculates number of steps taken based on values in the ring buffer.
   void _calculateSteps() { //called every second
     //compare last values and identify spikes over threshold
-    int increaseThreshold = 8; //ToDo use sensitivity
+    double increaseThreshold = 8;     //8
+    increaseThreshold= _sensitivity * 2 + (increaseThreshold - 1); //allow for a range of +-1
     int timeThreshold = 5; //in data points
     for (int i = 0; i < _ringBufferSize - timeThreshold; i++) {
       //got through all data points and look fpr spikes in threshold interval
@@ -165,17 +165,15 @@ class _RunningMateState extends State<RunningMate> {
         continue;
       }
       for (int j = 1; j <= timeThreshold; j++) {
-        //print("Time: ${DateTime.now()} | ${getFromBuffer(i)} | ${getFromBuffer(i + j)} | ${getFromBuffer(i) - getFromBuffer(i + j)}");
         if (_getFromBuffer(i) != _emptyValue &&
             _getFromBuffer(i + j) != _emptyValue &&
             _getFromBuffer(i) - _getFromBuffer(i + j) > increaseThreshold) {
           _countedSteps.value++;
-          print("Step taken: ${_countedSteps.value} Time: ${DateTime.now()}| data[i]: ${_getFromBuffer(i)} | data[i+j]: ${_getFromBuffer(i + j)} | ${_getFromBuffer(i) - _getFromBuffer(i + j)}");
           //remove already processed values
           for (int k = i; k <= i + j; k++) {
             _removeFromBuffer(k);
           }
-          break; //ToDo maybe remove break
+          break;
         }
       }
     }
@@ -205,10 +203,10 @@ class _RunningMateState extends State<RunningMate> {
       int minutes = time ~/ 60;
       int seconds = time % 60;
       _time.value = double.parse("${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}");
-      _calories.value = calculateCalories(_weight, time, _countedSteps.value.toInt(), _stepLength).toDouble();
+      _calories.value = calculateCalories(_weight, time, _countedSteps.value.toInt(), _stepLength);
       //Cadence: Running average, cadence is in steps per minute
       _lastStepValues.add(_countedSteps.value.toInt());
-      _cadence.value = _round((_lastStepValues.last - _lastStepValues.first) / 2 * 60, 4); //lastStepValues has 4 elements -> 2s
+      _cadence.value = _round((_lastStepValues.last - _lastStepValues.first) / 5 * 60, 4); //lastStepValues has 10 elements -> 5s
       _speed.value = _round(_stepLength * _cadence.value / 1000 * 60, 4); //in km/h
       _gpsPositionKey.currentState!.setSteps(_countedSteps.value.toInt());
     }
@@ -253,12 +251,6 @@ class _RunningMateState extends State<RunningMate> {
     );
   }
 
-  ///
-  void _calculateStepLength() {
-    //ToDo
-    _stepLength = _gpsPositionKey.currentState!.calculateStepLength(_countedSteps.value as int);
-  }
-
   ///Rounds a double to a certain number of decimal places.
   double _round(double val, int places) {
     num mod = pow(10.0, places);
@@ -301,6 +293,7 @@ class _RunningMateState extends State<RunningMate> {
       ),
       body: SafeArea(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(height: 20),
             ValueListenableBuilder<double>(
@@ -314,7 +307,6 @@ class _RunningMateState extends State<RunningMate> {
             ),
             SizedBox(height: 20),
             Row(
-              //crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ValueListenableBuilder<double>(
@@ -340,7 +332,6 @@ class _RunningMateState extends State<RunningMate> {
             ),
             SizedBox(height: 20),
             Row(
-              //crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ValueListenableBuilder<double>(
@@ -379,14 +370,14 @@ class _RunningMateState extends State<RunningMate> {
                   onPressed: () {
                     setState(() {
                       _countingSteps = !_countingSteps; //changing the icon.
-                      _gpsPositionKey.currentState?.setRecording(
-                          _countingSteps); //tell gps widget to start/stop recording
+                      _gpsPositionKey.currentState?.setRecording(_countingSteps); //tell gps widget to start/stop recording
                       if (_countingSteps) {
                         //Resetting the values.
                         _startTime = DateTime.now();
                         _time.value = 0;
                         _countedSteps.value = 0;
                         _calories.value = 0;
+                        _lastStepValues.clear();
                       } else {
                         _pauseAudio();
                       }
@@ -409,6 +400,7 @@ class _RunningMateState extends State<RunningMate> {
             ),
             SizedBox(height: 10),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 SizedBox(width: 45),
                 Text(
@@ -430,13 +422,20 @@ class _RunningMateState extends State<RunningMate> {
 
   ///Plays an audio file corresponding to the current cadence and goal cadence.
   void _updateAudio() {
-    if (!widget.openEarable.bleManager.connected || !_countingSteps) {
+    if (!widget.openEarable.bleManager.connected) {
+      _earableConnected = false;
+      return;
+    }
+    if (!_countingSteps) {
       return;
     }
     int bpm = _cadence.value.toInt();
     int goalBpm = _goalCadence;
     //app expects 30-100bpm files to be present
     String filename = "";
+    if (bpm - _playingBpm < 10 && bpm - _playingBpm > -10) {  //don't change audio if bpm is similar
+      return;
+    }
     int alternative = Random().nextInt(_numberOfAlternativeSongs) + 1;
     if (bpm < 30) {
       filename = "30";
@@ -460,25 +459,65 @@ class _RunningMateState extends State<RunningMate> {
     if (filename == "" || !filename.endsWith('.wav')) {
       return;
     }
-    widget.openEarable.audioPlayer.wavFile(filename);
+    try {
+      widget.openEarable.audioPlayer.wavFile(filename);
+      _playingBpm = 0;
+    }
+    catch (e) {
+      handleEarableError(e);
+    }
   }
 
+  ///Plays the audio on the OpenEarable device.
   void _playAudio() {
-    widget.openEarable.audioPlayer.setState(AudioPlayerState.start);
+    try {
+      widget.openEarable.audioPlayer.setState(AudioPlayerState.start);
+    }
+    catch (e) {
+      handleEarableError(e);
+    }
   }
 
+  ///Pauses the audio on the OpenEarable device.
   void _pauseAudio() {
-    widget.openEarable.audioPlayer.setState(AudioPlayerState.pause);
+    if (!widget.openEarable.bleManager.connected) {
+      return;
+    }
+    try {
+      widget.openEarable.audioPlayer.setState(AudioPlayerState.pause);
+      _playingBpm = 0;
+    }
+    catch (e) {
+      handleEarableError(e);
+    }
   }
 
+  ///Completely stops the audio on the OpenEarable device.
   void _stopAudio() {
-    widget.openEarable.audioPlayer.setState(AudioPlayerState.stop);
+    if (!widget.openEarable.bleManager.connected) {
+      return;
+    }
+    try {
+      widget.openEarable.audioPlayer.setState(AudioPlayerState.stop);
+      _playingBpm = 0;
+    }
+    catch (e) {
+      handleEarableError(e);
+    }
+  }
+
+  ///Handles errors with the OpenEarable device. Methods can error when the device disconnects.
+  void handleEarableError(e) {
+    print("Earable Error: $e");
+    if (!widget.openEarable.bleManager.connected) {
+      _earableConnected = false;
+    }
   }
 
 //--------------------------- Running stats ---------------------------
 
   ///Simple Calorie Calculator without advanced variables like gradients. weight in kg, stepLength in m
-  int calculateCalories(int weight, int seconds, int steps, double stepLength,) {
+  double calculateCalories(int weight, int seconds, int steps, double stepLength,) {
     //calculation based on METs (see https://runbundle.com/tools/running-calorie-calculator and https://en.wikipedia.org/wiki/Metabolic_equivalent_of_task)
     //does not take hills into account
     if (seconds == 0 || steps == 0) {
@@ -486,7 +525,7 @@ class _RunningMateState extends State<RunningMate> {
     }
     double speed = (steps * stepLength) / (seconds * 3600); //in m/h
     double mets = _lookupMets(speed);
-    return (mets * weight * (seconds / 3600)).round();
+    return _round(mets * weight * (seconds / 3600), 2);
   }
 
   ///Calculates the Metabolic Equivalent of Task (MET) based on the speed in m/h.
